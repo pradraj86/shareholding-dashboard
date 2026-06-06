@@ -1,0 +1,6 @@
+{
+    "claudeCodeChat.permissions.yoloMode": false,
+    "python.analysis.extraPaths": [
+        "./pages"
+    ]
+}

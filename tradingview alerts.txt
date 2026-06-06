@@ -1,0 +1,12 @@
+8727845248:AAHqThGX3lHsmL49N19oYJYuuhrAels3iRc
+https://api.telegram.org/bot%3CYOUR_BOT_TOKEN%3E/sendMessage?chat_id=%40%3CCHANNEL_USERNAME%3E&text=%3CENCODED_MESSAGE%3E
+
+
+https://api.telegram.org/bot8727845248:AAHqThGX3lHsmL49N19oYJYuuhrAels3iRc/sendMessage?chat_id=-1003905687611&text=TradingView+Test+Message
+https://api.telegram.org/bot8727845248:AAHqThGX3lHsmL49N19oYJYuuhrAels3iRc/sendMessage
+https://api.telegram.org/bot8727845248:AAHqThGX3lHsmL49N19oYJYuuhrAels3iRc/sendMessage?chat_id=-1003905687611&text=%3CENCODED_MESSAGE%3E
+
+
+google sheet
+
+https://script.google.com/macros/s/AKfycbzO8qjRJKj0TcGW1hORj5QQ_mV0oiuPGK1i9umOupuN30-bHDUKFjLOUa0_pM9vk8jiOA/exec
