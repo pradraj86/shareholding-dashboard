@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
+
+# Logs
+logs/
+*.log
+
+# Data
+data/
+
+# ZIP files
+*.zip
+
+# Excel
+*.xlsx
+
+# Tests
+test*.py
+
+# Local configs
+service_account*.json
+
+# Streamlit cache
+.streamlit/
+
+# Backup folders
+pages - Copy/
+*Copy.py
