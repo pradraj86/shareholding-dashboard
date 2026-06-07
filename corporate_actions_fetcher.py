@@ -51,7 +51,41 @@ def extract_zip(zip_file):
 
     return txt_files[0]
 
+def categorize_announcement(text):
 
+    t = str(text).upper()
+
+    if "INVESTOR" in t:
+        return "Investor Meet"
+
+    elif "BOARD MEETING" in t:
+        return "Board Meeting"
+
+    elif "DIVIDEND" in t:
+        return "Dividend"
+
+    elif "ACQUISITION" in t:
+        return "Acquisition"
+
+    elif (
+        "DIRECTOR" in t
+        or "KMP" in t
+        or "APPOINTMENT" in t
+        or "RESIGNATION" in t
+    ):
+        return "Management Change"
+
+    elif (
+        "QIP" in t
+        or "FUND RAISING" in t
+    ):
+        return "Fund Raising"
+
+    elif "MERGER" in t:
+        return "Merger"
+
+    else:
+        return "Other"
 def parse_file(txt_file, dt):
 
     rows = []
@@ -91,19 +125,26 @@ def parse_file(txt_file, dt):
                 else:
                     ann_type = raw_ann
                     ann_text = ""
-
+                category = categorize_announcement(
+    ann_type
+)
                 rows.append({
                     "date": dt.strftime("%Y-%m-%d"),
                     "company": m.group(1).strip(),
                     "symbol": symbol,
                     "announcement_type": ann_type,
-                    "announcement_text": ann_text
+                    "announcement_text": ann_text,
+                    "announcement_category": category,
+                    "source_file": txt_file.name,
                 })
 
     return pd.DataFrame(rows)
 
 
 def update_master(df_new):
+
+    if df_new.empty:
+        return
 
     if PARQUET_FILE.exists():
 
@@ -116,18 +157,20 @@ def update_master(df_new):
             ignore_index=True
         )
 
-        master.drop_duplicates(
-            subset=[
-                "date",
-                "symbol",
-                "announcement_type",
-                "announcement_text"
-            ],
-            inplace=True
-        )
-
     else:
-        master = df_new
+
+        master = df_new.copy()
+
+    master.drop_duplicates(
+        subset=[
+            "date",
+            "symbol",
+            "announcement_type",
+            "announcement_text"
+        ],
+        keep="last",
+        inplace=True
+    )
 
     master.to_parquet(
         PARQUET_FILE,
@@ -135,12 +178,35 @@ def update_master(df_new):
     )
 
     print(
-        f"Saved {len(master)} announcements"
+        f"Total announcements: "
+        f"{len(master):,}"
     )
-
 from datetime import datetime, timedelta
 import requests
+def pr_exists(dt):
 
+    fname = f"PR{dt.strftime('%d%m%y')}.zip"
+
+    url = (
+        "https://nsearchives.nseindia.com/"
+        f"archives/equities/bhavcopy/pr/{fname}"
+    )
+
+    try:
+
+        r = requests.head(
+            url,
+            headers={
+                "User-Agent":
+                "Mozilla/5.0"
+            },
+            timeout=10
+        )
+
+        return r.status_code == 200
+
+    except:
+        return False
 def get_latest_available_date(max_days=15):
 
     session = requests.Session()
@@ -184,48 +250,110 @@ def get_latest_available_date(max_days=15):
     )
 from datetime import datetime, timedelta
 
+def get_last_downloaded_date():
+
+    if not PARQUET_FILE.exists():
+        return None
+
+    try:
+
+        df = pd.read_parquet(
+            PARQUET_FILE,
+            columns=["date"]
+        )
+
+        if df.empty:
+            return None
+
+        return pd.to_datetime(
+            df["date"]
+        ).max().date()
+
+    except Exception:
+
+        return None
+    
+from datetime import date, timedelta
+
+def get_dates_to_download():
+
+    last_date = get_last_downloaded_date()
+
+    latest_available = (
+    get_latest_available_date()
+    .date()
+)
+
+    if last_date is None:
+
+        start_date = latest_available - timedelta(days=60)
+
+    else:
+
+        start_date = last_date + timedelta(days=1)
+
+    dates = []
+
+    current = start_date
+
+    while current <= latest_available:
+
+        dates.append(current)
+
+        current += timedelta(days=1)
+
+    return dates    
 if __name__ == "__main__":
 
-    success = False
+    dates = get_dates_to_download()
 
-    for i in range(15):
+    print(
+        f"\nChecking {len(dates)} dates...\n"
+    )
 
-        dt = datetime.today() - timedelta(days=i)
+    total_rows = 0
+
+    for dt in dates:
 
         try:
 
             print(
-                f"Trying {dt.strftime('%d-%b-%Y')}"
+                f"Processing "
+                f"{dt.strftime('%d-%b-%Y')}"
             )
 
             zip_file = download_pr_file(dt)
 
-            print("Downloaded")
-
-            txt_file = extract_zip(zip_file)
-
-            print("Extracted")
-
-            df = parse_file(txt_file, dt)
-
-            print(
-                f"Parsed {len(df)} rows"
+            txt_file = extract_zip(
+                zip_file
             )
 
-            update_master(df)
+            df = parse_file(
+                txt_file,
+                dt
+            )
 
-            success = True
+            if not df.empty:
 
-            break
+                update_master(df)
+
+                total_rows += len(df)
+
+                print(
+                    f"Added "
+                    f"{len(df):,} rows"
+                )
 
         except Exception as e:
 
             print(
-                f"Failed {dt.strftime('%d-%b-%Y')} : {e}"
+                f"Skipped "
+                f"{dt.strftime('%d-%b-%Y')} "
+                f"({e})"
             )
 
-    if not success:
-
-        raise Exception(
-            "No PR file found in last 15 days"
-        )
+    print(
+        f"\nCompleted. "
+        f"Rows processed: "
+        f"{total_rows:,}"
+    )

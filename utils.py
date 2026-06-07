@@ -19,6 +19,7 @@ PER_STOCK_CF   = Path("data/cashflow_screener")
 BROKERAGE_FILE = Path("data/brokerage_reports.parquet")
 TECHNICAL_FILE = Path("data/technicals_all.parquet")
 CORP_ACTIONS_FILE = Path("data/corporate_actions_all.parquet")
+DATA_DIR = Path("data")
 
 
 CATEGORY_COLORS = {
@@ -1175,3 +1176,312 @@ def load_corporate_actions():
 
     except Exception:
         return pd.DataFrame()
+
+
+
+
+
+
+
+@st.cache_data(ttl=3600)
+def load_bulk_deals():
+
+    file = DATA_DIR / "bulk_deals.parquet"
+
+    if not file.exists():
+        return pd.DataFrame()
+
+    return prepare_bulk_block(
+        pd.read_parquet(file)
+    )
+
+
+@st.cache_data(ttl=3600)
+def load_block_deals():
+
+    file = DATA_DIR / "block_deals.parquet"
+
+    if not file.exists():
+        return pd.DataFrame()
+
+    return prepare_bulk_block(
+        pd.read_parquet(file)
+    )
+
+
+def prepare_bulk_block(df):
+
+    if df.empty:
+        return df
+
+    df = df.copy()
+
+    df.columns = (
+        df.columns
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\s*/\s*", "/", regex=True)
+    )
+
+    if df.columns.has_duplicates:
+
+        merged = {}
+
+        for col in pd.Index(df.columns).unique():
+
+            matching = df.loc[:, df.columns == col]
+
+            if matching.shape[1] == 1:
+
+                merged[col] = matching.iloc[:, 0]
+
+            else:
+
+                merged[col] = matching.bfill(axis=1).iloc[:, 0]
+
+        df = pd.DataFrame(
+            merged,
+            index=df.index
+        )
+
+    for col in [
+        "Quantity Traded",
+        "Trade Price/Wght. Avg. Price",
+        "Trade_Value"
+    ]:
+
+        if col in df.columns:
+
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.replace(",", "", regex=False)
+            )
+
+            df[col] = pd.to_numeric(
+                df[col],
+                errors="coerce"
+            )
+
+    price_col = "Trade Price/Wght. Avg. Price"
+
+    if (
+        "Trade_Value" not in df.columns
+        and "Quantity Traded" in df.columns
+        and price_col in df.columns
+    ):
+
+        df["Trade_Value"] = (
+            df["Quantity Traded"]
+            *
+            df[price_col]
+        )
+
+    elif (
+        "Trade_Value" in df.columns
+        and "Quantity Traded" in df.columns
+        and price_col in df.columns
+    ):
+
+        computed_value = (
+            df["Quantity Traded"]
+            *
+            df[price_col]
+        )
+
+        df["Trade_Value"] = df["Trade_Value"].fillna(
+            computed_value
+        )
+
+    if "Date" in df.columns:
+
+        df["Date"] = pd.to_datetime(
+            df["Date"],
+            errors="coerce"
+        )
+
+    if "Symbol" in df.columns:
+
+        df["Symbol"] = (
+            df["Symbol"]
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    if "Buy/Sell" in df.columns:
+
+        df["Buy/Sell"] = (
+            df["Buy/Sell"]
+            .astype(str)
+            .str.upper()
+            .str.strip()
+            .replace(
+                {
+                    "NAN": pd.NA,
+                    "NONE": pd.NA,
+                    "": pd.NA
+                }
+            )
+        )
+
+    return df
+def get_top_bulk_buyers(days=30):
+
+    df = load_bulk_deals()
+
+    df = prepare_bulk_block(df)
+
+    if df.empty:
+        return pd.DataFrame()
+
+    cutoff = (
+        pd.Timestamp.today()
+        - pd.Timedelta(days=days)
+    )
+
+    df = df[
+        df["Date"] >= cutoff
+    ]
+
+    buyers = (
+        df[
+            df["Buy/Sell"]
+            .astype(str)
+            .str.upper()
+            == "BUY"
+        ]
+        .groupby("Client Name")
+        .agg(
+            Trade_Value=("Trade_Value", "sum"),
+            Trades=("Symbol", "count")
+        )
+        .reset_index()
+        .sort_values(
+            "Trade_Value",
+            ascending=False
+        )
+    )
+
+    return buyers
+def get_top_bulk_sellers(days=30):
+
+    df = load_bulk_deals()
+
+    df = prepare_bulk_block(df)
+
+    if df.empty:
+        return pd.DataFrame()
+
+    cutoff = (
+        pd.Timestamp.today()
+        - pd.Timedelta(days=days)
+    )
+
+    df = df[
+        df["Date"] >= cutoff
+    ]
+
+    sellers = (
+        df[
+            df["Buy/Sell"]
+            .astype(str)
+            .str.upper()
+            == "SELL"
+        ]
+        .groupby("Client Name")
+        .agg(
+            Trade_Value=("Trade_Value", "sum"),
+            Trades=("Symbol", "count")
+        )
+        .reset_index()
+        .sort_values(
+            "Trade_Value",
+            ascending=False
+        )
+    )
+
+    return sellers
+def get_stock_net_flow(days=30):
+
+    df = pd.concat(
+        [
+            load_bulk_deals(),
+            load_block_deals()
+        ],
+        ignore_index=True
+    )
+
+    if df.empty:
+        return pd.DataFrame()
+
+    cutoff = (
+        pd.Timestamp.today()
+        - pd.Timedelta(days=days)
+    )
+
+    df = df[
+        df["Date"] >= cutoff
+    ]
+
+    buy = (
+        df[
+            df["Buy/Sell"]
+            .astype(str)
+            .str.upper()
+            == "BUY"
+        ]
+        .groupby("Symbol")["Trade_Value"]
+        .sum()
+    )
+
+    sell = (
+        df[
+            df["Buy/Sell"]
+            .astype(str)
+            .str.upper()
+            == "SELL"
+        ]
+        .groupby("Symbol")["Trade_Value"]
+        .sum()
+    )
+
+    net = pd.concat(
+        [buy, sell],
+        axis=1
+    ).fillna(0)
+
+    net.columns = [
+        "Buy_Value",
+        "Sell_Value"
+    ]
+
+    net["Net_Value"] = (
+        net["Buy_Value"]
+        - net["Sell_Value"]
+    )
+
+    return (
+        net
+        .reset_index()
+        .sort_values(
+            "Net_Value",
+            ascending=False
+        )
+    )
+def get_recent_bulk_deals(limit=100):
+
+    df = load_bulk_deals()
+
+    df = prepare_bulk_block(df)
+
+    if df.empty:
+        return df
+
+    return (
+        df.sort_values(
+            "Date",
+            ascending=False
+        )
+        .head(limit)
+    )

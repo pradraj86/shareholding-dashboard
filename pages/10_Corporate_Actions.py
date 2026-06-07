@@ -81,7 +81,43 @@ def categorize_announcement(text):
 
 
 df = load_corporate_actions()
+if "announcement_category" not in df.columns:
+
+    df["announcement_category"] = (
+        df["announcement_type"]
+        .fillna("")
+        .apply(categorize_announcement)
+    )
 st.write("Rows in parquet:", len(df))
+c1,c2,c3,c4 = st.columns(4)
+
+c1.metric(
+    "Announcements",
+    f"{len(df):,}"
+)
+
+c2.metric(
+    "Stocks",
+    df["symbol"].nunique()
+)
+
+c3.metric(
+    "Categories",
+    df["announcement_category"]
+    .nunique()
+)
+
+c4.metric(
+    "Last Date",
+    str(
+        pd.to_datetime(
+            df["date"]
+        ).max().date()
+    )
+)
+
+
+
 if df.empty:
 
     st.warning(
@@ -102,11 +138,6 @@ df["date"] = pd.to_datetime(
     errors="coerce"
 )
 
-df["announcement_category"] = (
-    df["announcement_type"]
-    .fillna("")
-    .apply(categorize_announcement)
-)
 
 # ----------------------------
 # Sidebar Filters
@@ -376,16 +407,7 @@ gb.configure_grid_options(
 
 grid_options = gb.build()
 
-AgGrid(
-    grid_df,
-    gridOptions=grid_options,
-    update_mode=GridUpdateMode.NO_UPDATE,
-    columns_auto_size_mode=ColumnsAutoSizeMode.NO_AUTOSIZE,
-    use_container_width=True,
-    height=600,
-    allow_unsafe_jscode=True,
-    theme="streamlit",
-)
+
 
 # ----------------------------
 # Download
@@ -401,3 +423,169 @@ st.download_button(
     file_name="corporate_actions.csv",
     mime="text/csv"
 )
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "Recent",
+    "Hot Stocks",
+    "Most Active",
+    "Activity Score",
+    "Board Meetings",
+    "Management",
+    "Search"
+])
+with tab1:
+    AgGrid(
+    grid_df,
+    gridOptions=grid_options,
+    update_mode=GridUpdateMode.NO_UPDATE,
+    columns_auto_size_mode=ColumnsAutoSizeMode.NO_AUTOSIZE,
+    use_container_width=True,
+    height=600,
+    allow_unsafe_jscode=True,
+    theme="streamlit",
+)
+with tab2:
+
+    st.subheader(
+        "🔥 Hot Stocks (Last 7 Days)"
+    )
+
+    recent = df[
+        pd.to_datetime(df["date"])
+        >= (
+            pd.Timestamp.today()
+            - pd.Timedelta(days=7)
+        )
+    ]
+
+    hot = (
+        recent.groupby("symbol")
+        .size()
+        .reset_index(name="Events")
+        .sort_values(
+            "Events",
+            ascending=False
+        )
+    )
+
+    st.dataframe(
+        hot.head(100),
+        width="stretch",
+        hide_index=True
+    )
+with tab3:
+
+    st.subheader(
+        "Most Active Stocks"
+    )
+
+    active = (
+        df.groupby("symbol")
+        .size()
+        .reset_index(name="Announcements")
+        .sort_values(
+            "Announcements",
+            ascending=False
+        )
+    )
+
+    st.dataframe(
+        active.head(100),
+        width="stretch",
+        hide_index=True
+    )
+with tab4:
+
+    st.subheader(
+        "⭐ Corporate Activity Score"
+    )
+
+    SCORE_MAP = {
+        "Board Meeting": 3,
+        "Investor Meet": 2,
+        "Dividend": 3,
+        "Acquisition": 5,
+        "Management Change": 4,
+        "Fund Raising": 5,
+        "Merger": 5,
+        "Other": 1
+    }
+
+    activity = df.copy()
+
+    activity["Score"] = (
+        activity["announcement_category"]
+        .map(SCORE_MAP)
+        .fillna(1)
+    )
+
+    score_df = (
+        activity.groupby("symbol")
+        .agg(
+            Activity_Score=("Score", "sum"),
+            Events=("symbol", "count")
+        )
+        .reset_index()
+        .sort_values(
+            "Activity_Score",
+            ascending=False
+        )
+    )
+
+    st.dataframe(
+        score_df.head(100),
+        width="stretch",
+        hide_index=True
+    )
+with tab5:
+
+    board = df[
+        df["announcement_category"]
+        == "Board Meeting"
+    ]
+
+    st.dataframe(
+        board.sort_values(
+            "date",
+            ascending=False
+        ),
+        width="stretch",
+        hide_index=True
+    )
+
+with tab6:
+
+    mgmt = df[
+        df["announcement_category"]
+        == "Management Change"
+    ]
+
+    st.dataframe(
+        mgmt.sort_values(
+            "date",
+            ascending=False
+        ),
+        width="stretch",
+        hide_index=True
+    )   
+with tab7:
+
+    symbol = st.text_input(
+        "Symbol"
+    ).upper()
+
+    if symbol:
+
+        result = df[
+            df["symbol"]
+            .str.upper()
+            == symbol
+        ]
+
+        st.dataframe(
+            result.sort_values(
+                "date",
+                ascending=False
+            ),
+            width="stretch",
+            hide_index=True
+        )     

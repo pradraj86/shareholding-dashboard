@@ -30,14 +30,13 @@ service_account*.json
 # Backup folders
 pages - Copy/
 *Copy.py
-
-# Ignore large raw folders
+# Ignore subfolders only
 data/shareholding_screener/
 data/financials_screener/
 data/cashflow_screener/
 data/pr/
 
-# Keep master files
+# Keep master parquet files
 !data/shareholding_all.parquet
 !data/financials_all.parquet
 !data/cashflow_all.parquet
@@ -45,9 +44,18 @@ data/pr/
 !data/brokerage_reports.parquet
 !data/corporate_actions_all.parquet
 !data/insider_trades.parquet
-!data/technicals_all.parquet
 
-service_account*.json
+# Data
+data/*.parquet
+data/*.csv
+
+# Logs
 logs/
+
+# Python cache
 __pycache__/
-.vscode/
+*.pyc
+
+# Exports
+Bulk-Deals-*.csv
+Block-Deals-*.csv
