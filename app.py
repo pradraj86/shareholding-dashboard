@@ -9,7 +9,40 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+import subprocess
+import streamlit as st
 
+
+def run_fetcher(script_name, label):
+
+    with st.spinner(f"Running {label}..."):
+
+        try:
+
+            result = subprocess.run(
+                ["python", script_name],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            st.success(
+                f"✅ {label} completed"
+            )
+
+            st.cache_data.clear()
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+
+            st.error(
+                f"❌ {label} failed"
+            )
+
+            st.code(e.stderr)
+
+            return False
 # ─── Theme ────────────────────────────────────────────────────────────────────
 
 st.markdown("""
@@ -49,31 +82,83 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 with st.sidebar:
     st.title("📊 Stock Tracker")
     st.caption("Source: Screener.in")
-    if st.button("🔄 Download From Screener", use_container_width=True):
-        # 1. Show a spinner so the user knows something is happening
-        with st.spinner("📥 Fetching fresh data from Screener..."):
-            try:
-                # 2. Run your actual python script that downloads the data
-                # Replace 'screener_fetcher.py' with your actual filename
-                result = subprocess.run(
-                    ["python", "screener_fetcher.py"], 
-                    capture_output=True, 
-                    text=True, 
-                    check=True
-                )
-                
-                # 3. If the script finished without error, clear the cache
-                st.cache_data.clear()
-                
-                # 4. Success message and restart the app
-                st.success("✅ Data Updated!")
-                st.rerun()
-                
-            except subprocess.CalledProcessError as e:
-                # If the fetcher script fails, show the error from that script
-                st.error(f"Error during fetch: {e.stderr}")
+    st.markdown("---")
+    st.subheader("🔄 Data Refresh")
 
+    if st.button(
+        "📊 Screener Data",
+        use_container_width=True
+    ):
+        if run_fetcher(
+            "screener_fetcher.py",
+            "Screener Refresh"
+        ):
+            st.rerun()
+
+    if st.button(
+        "🕵️ Insider Trades",
+        use_container_width=True
+    ):
+        if run_fetcher(
+            "insider_fetcher.py",
+            "Insider Refresh"
+        ):
+            st.rerun()
+
+    if st.button(
+        "📦 Bulk / Block Deals",
+        use_container_width=True
+    ):
+        if run_fetcher(
+            "bulk_block_fetcher.py",
+            "Bulk/Block Refresh"
+        ):
+            st.rerun()
+
+    if st.button(
+        "📢 Corporate Actions",
+        use_container_width=True
+    ):
+        if run_fetcher(
+            "corporate_actions_fetcher.py",
+            "Corporate Actions Refresh"
+        ):
+            st.rerun()
+
+    if st.button(
+        "🏦 Brokerage Reports",
+        use_container_width=True
+    ):
+        if run_fetcher(
+            "brokerage_fetcher.py",
+            "Brokerage Refresh"
+        ):
+            st.rerun()
    
+    if st.button(
+    "🚀 Refresh Everything",
+    use_container_width=True
+):
+
+        scripts = [
+            ("screener_fetcher.py", "Screener"),
+            ("insider_fetcher.py", "Insider"),
+            ("bulk_block_fetcher.py", "Bulk/Block"),
+            ("corporate_actions_fetcher.py", "Corporate Actions"),
+            ("brokerage_fetcher.py", "Brokerage")
+        ]
+
+        for script, label in scripts:
+
+            ok = run_fetcher(
+                script,
+                label
+            )
+
+            if not ok:
+                break
+
+        st.rerun()
 
     if st.button("🔄 Clear Cache Only", use_container_width=True):
         st.cache_data.clear() # This wipes the Streamlit RAM
@@ -243,3 +328,4 @@ st.info(
 )
 
 st.stop()
+
