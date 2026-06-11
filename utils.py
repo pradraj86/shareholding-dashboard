@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 import subprocess
 import numpy as np
+from datetime import datetime
 
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -77,7 +78,20 @@ def load_technical_data():
         )
 
         return pd.DataFrame()
+  
+
+def get_file_timestamp(file_path):
+
+    p = Path(file_path)
+
+    if not p.exists():
+        return "Not Available"
+
+    return datetime.fromtimestamp(
+        p.stat().st_mtime
+    ).strftime("%d-%b-%Y %H:%M")
 # ─── Data Loading ─────────────────────────────────────────────────────────────
+
 @st.cache_data(ttl=3600)
 def load_all_data():
     return load_master_sh(), load_master_fin(), load_master_cf(), load_insider_data(), load_snapshot(),load_brokerage_data(), load_technical_data()

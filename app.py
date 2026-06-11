@@ -43,6 +43,42 @@ def run_fetcher(script_name, label):
             st.code(e.stderr)
 
             return False
+
+
+def run_batch(batch_file, label):
+
+    with st.spinner(f"{label}..."):
+
+        try:
+
+            result = subprocess.run(
+                [batch_file],
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            st.success(
+                f"✅ {label} completed"
+            )
+
+            if result.stdout:
+                st.code(result.stdout)
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+
+            st.error(
+                f"❌ {label} failed"
+            )
+
+            st.code(
+                e.stdout + "\n" + e.stderr
+            )
+
+            return False
 # ─── Theme ────────────────────────────────────────────────────────────────────
 
 st.markdown("""
@@ -82,6 +118,33 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 with st.sidebar:
     st.title("📊 Stock Tracker")
     st.caption("Source: Screener.in")
+    st.markdown("---")
+    st.caption("📅 Last Data Updates")
+
+    st.caption(
+        f"📊 Screener : "
+        f"{get_file_timestamp('data/shareholding_all.parquet')}"
+    )
+
+    st.caption(
+        f"🕵️ Insider : "
+        f"{get_file_timestamp('data/insider_trades.parquet')}"
+    )
+
+    st.caption(
+        f"📦 Bulk/Block : "
+        f"{get_file_timestamp('data/bulk_deals.parquet')}"
+    )
+
+    st.caption(
+        f"📢 Corporate : "
+        f"{get_file_timestamp('data/corporate_actions_all.parquet')}"
+    )
+
+    st.caption(
+        f"🏦 Brokerage : "
+        f"{get_file_timestamp('data/brokerage_reports.parquet')}"
+    )
     st.markdown("---")
     st.subheader("🔄 Data Refresh")
 
@@ -160,6 +223,35 @@ with st.sidebar:
 
         st.rerun()
 
+    
+    st.markdown("---")
+    st.subheader("☁️ GitHub")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        if st.button(
+            "📥 Update GitHub",
+            use_container_width=True
+        ):
+
+            run_batch(
+                "update_github.bat",
+                "GitHub Update"
+            )
+
+    with col2:
+
+        if st.button(
+            "📤 Push Only",
+            use_container_width=True
+        ):
+
+            run_batch(
+                "commit_github.bat",
+                "GitHub Push"
+            )
     if st.button("🔄 Clear Cache Only", use_container_width=True):
         st.cache_data.clear() # This wipes the Streamlit RAM
         st.success("Cache Cleared!") 
