@@ -1,7 +1,11 @@
 from datetime import date, timedelta
 from io import StringIO
 from urllib.parse import urlencode
-
+from utils import (
+    clean_insider_data,
+    build_insider_summary,
+    insider_score
+)
 import pandas as pd
 import requests
 
@@ -26,55 +30,6 @@ def build_url(start_date=None, end_date=None, hide_small_qty=True):
     return f"{BASE_URL}?{urlencode(params)}"
 
 
-def normalize_columns(df):
-    df = df.copy()
-    df.columns = (
-        df.columns.astype(str)
-        .str.strip()
-        .str.lower()
-        .str.replace(r"[^a-z0-9]+", "_", regex=True)
-        .str.strip("_")
-    )
-    return df
-
-
-def clean_insider_data(df):
-    df = normalize_columns(df)
-
-    if "quantity" in df.columns:
-        df["quantity"] = pd.to_numeric(
-            df["quantity"].astype(str).str.replace(",", "", regex=False),
-            errors="coerce",
-        )
-
-    if "value" in df.columns:
-        df["value"] = pd.to_numeric(
-            df["value"]
-            .astype(str)
-            .str.replace(",", "", regex=False)
-            .str.replace("-", "", regex=False),
-            errors="coerce",
-        )
-
-    if "traded" in df.columns:
-        df["traded_pct"] = pd.to_numeric(
-            df["traded"]
-            .astype(str)
-            .str.replace("%", "", regex=False)
-            .str.replace("-", "", regex=False),
-            errors="coerce",
-        )
-
-    if {"action", "value"}.issubset(df.columns):
-        df["signed_value"] = 0.0
-        df.loc[df["action"].eq("Acquisition"), "signed_value"] = df.loc[
-            df["action"].eq("Acquisition"), "value"
-        ].fillna(0)
-        df.loc[df["action"].eq("Disposal"), "signed_value"] = -df.loc[
-            df["action"].eq("Disposal"), "value"
-        ].fillna(0)
-
-    return df
 
 
 def fetch_insider_data(start_date=None, end_date=None, hide_small_qty=True):
@@ -89,66 +44,9 @@ def fetch_insider_data(start_date=None, end_date=None, hide_small_qty=True):
     return clean_insider_data(tables[0])
 
 
-def build_insider_summary(df):
-    if df.empty:
-        return {
-            "action_counts": pd.Series(dtype="int64"),
-            "value_by_action": pd.Series(dtype="float64"),
-            "category_counts": pd.Series(dtype="int64"),
-            "net_by_stock": pd.Series(dtype="float64"),
-            "value_by_stock": pd.Series(dtype="float64"),
-            "quantity_by_stock": pd.Series(dtype="float64"),
-            "top_transactions": pd.DataFrame(),
-            "top_traded_pct": pd.DataFrame(),
-        }
-
-    value_col = "value" if "value" in df.columns else None
-    quantity_col = "quantity" if "quantity" in df.columns else None
-
-    return {
-        "action_counts": df["action"].value_counts()
-        if "action" in df.columns
-        else pd.Series(dtype="int64"),
-        "value_by_action": df.groupby("action", dropna=False)[value_col].sum().sort_values(ascending=False)
-        if value_col and "action" in df.columns
-        else pd.Series(dtype="float64"),
-        "category_counts": df["client_category"].value_counts()
-        if "client_category" in df.columns
-        else pd.Series(dtype="int64"),
-        "net_by_stock": df[df["action"].isin(["Acquisition", "Disposal"])]
-        .groupby("stock", dropna=False)["signed_value"]
-        .sum()
-        .sort_values(ascending=False)
-        if {"stock", "action", "signed_value"}.issubset(df.columns)
-        else pd.Series(dtype="float64"),
-        "value_by_stock": df.groupby("stock", dropna=False)[value_col].sum().sort_values(ascending=False)
-        if value_col and "stock" in df.columns
-        else pd.Series(dtype="float64"),
-        "quantity_by_stock": df.groupby("stock", dropna=False)[quantity_col].sum().sort_values(ascending=False)
-        if quantity_col and "stock" in df.columns
-        else pd.Series(dtype="float64"),
-        "top_transactions": df.sort_values("value", ascending=False).head(20)
-        if "value" in df.columns
-        else df.head(20),
-        "top_traded_pct": df.sort_values("traded_pct", ascending=False).head(20)
-        if "traded_pct" in df.columns
-        else df.head(20),
-    }
 
 
-def insider_score(row):
-    score = 0
 
-    if "Promoter" in str(row.get("client_category", "")):
-        score += 3
-    if row.get("action") == "Acquisition":
-        score += 4
-    if row.get("quantity", 0) > 100000:
-        score += 2
-    if row.get("value", 0) > 10000000:
-        score += 2
-
-    return score
 
 
 def main():
@@ -157,6 +55,25 @@ def main():
         end_date=date.today(),
     )
     summary = build_insider_summary(df)
+    from pathlib import Path
+
+    INSIDER_FILE = Path(
+        "data/insider_trades.parquet"
+    )
+
+    INSIDER_FILE.parent.mkdir(
+        exist_ok=True
+    )
+
+    df.to_parquet(
+        INSIDER_FILE,
+        index=False
+    )
+
+    print(
+        f"Saved {len(df)} rows to "
+        f"{INSIDER_FILE}"
+    )
 
     print(f"Rows found: {len(df)}")
     print("\nTop rows")

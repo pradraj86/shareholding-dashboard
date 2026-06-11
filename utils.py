@@ -21,6 +21,8 @@ BROKERAGE_FILE = Path("data/brokerage_reports.parquet")
 TECHNICAL_FILE = Path("data/technicals_all.parquet")
 CORP_ACTIONS_FILE = Path("data/corporate_actions_all.parquet")
 DATA_DIR = Path("data")
+INSIDER_FILE = Path("data/insider_trades.parquet")
+
 
 
 CATEGORY_COLORS = {
@@ -48,6 +50,122 @@ CF_YOY_METRICS = [
     "Fixed Asset Purchased", "Net Cash Flow",
 ]
 
+@st.cache_data(ttl=3600)
+def load_insider_trades():
+
+    if not INSIDER_FILE.exists():
+        return pd.DataFrame()
+
+    return pd.read_parquet(
+        INSIDER_FILE
+    )
+def normalize_columns(df):
+    df = df.copy()
+    df.columns = (
+        df.columns.astype(str)
+        .str.strip()
+        .str.lower()
+        .str.replace(r"[^a-z0-9]+", "_", regex=True)
+        .str.strip("_")
+    )
+    return df
+
+
+def clean_insider_data(df):
+    df = normalize_columns(df)
+
+    if "quantity" in df.columns:
+        df["quantity"] = pd.to_numeric(
+            df["quantity"].astype(str).str.replace(",", "", regex=False),
+            errors="coerce",
+        )
+
+    if "value" in df.columns:
+        df["value"] = pd.to_numeric(
+            df["value"]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .str.replace("-", "", regex=False),
+            errors="coerce",
+        )
+
+    if "traded" in df.columns:
+        df["traded_pct"] = pd.to_numeric(
+            df["traded"]
+            .astype(str)
+            .str.replace("%", "", regex=False)
+            .str.replace("-", "", regex=False),
+            errors="coerce",
+        )
+
+    if {"action", "value"}.issubset(df.columns):
+        df["signed_value"] = 0.0
+        df.loc[df["action"].eq("Acquisition"), "signed_value"] = df.loc[
+            df["action"].eq("Acquisition"), "value"
+        ].fillna(0)
+        df.loc[df["action"].eq("Disposal"), "signed_value"] = -df.loc[
+            df["action"].eq("Disposal"), "value"
+        ].fillna(0)
+
+    return df
+def build_insider_summary(df):
+    if df.empty:
+        return {
+            "action_counts": pd.Series(dtype="int64"),
+            "value_by_action": pd.Series(dtype="float64"),
+            "category_counts": pd.Series(dtype="int64"),
+            "net_by_stock": pd.Series(dtype="float64"),
+            "value_by_stock": pd.Series(dtype="float64"),
+            "quantity_by_stock": pd.Series(dtype="float64"),
+            "top_transactions": pd.DataFrame(),
+            "top_traded_pct": pd.DataFrame(),
+        }
+
+    value_col = "value" if "value" in df.columns else None
+    quantity_col = "quantity" if "quantity" in df.columns else None
+
+    return {
+        "action_counts": df["action"].value_counts()
+        if "action" in df.columns
+        else pd.Series(dtype="int64"),
+        "value_by_action": df.groupby("action", dropna=False)[value_col].sum().sort_values(ascending=False)
+        if value_col and "action" in df.columns
+        else pd.Series(dtype="float64"),
+        "category_counts": df["client_category"].value_counts()
+        if "client_category" in df.columns
+        else pd.Series(dtype="int64"),
+        "net_by_stock": df[df["action"].isin(["Acquisition", "Disposal"])]
+        .groupby("stock", dropna=False)["signed_value"]
+        .sum()
+        .sort_values(ascending=False)
+        if {"stock", "action", "signed_value"}.issubset(df.columns)
+        else pd.Series(dtype="float64"),
+        "value_by_stock": df.groupby("stock", dropna=False)[value_col].sum().sort_values(ascending=False)
+        if value_col and "stock" in df.columns
+        else pd.Series(dtype="float64"),
+        "quantity_by_stock": df.groupby("stock", dropna=False)[quantity_col].sum().sort_values(ascending=False)
+        if quantity_col and "stock" in df.columns
+        else pd.Series(dtype="float64"),
+        "top_transactions": df.sort_values("value", ascending=False).head(20)
+        if "value" in df.columns
+        else df.head(20),
+        "top_traded_pct": df.sort_values("traded_pct", ascending=False).head(20)
+        if "traded_pct" in df.columns
+        else df.head(20),
+    }
+def insider_score(row):
+    score = 0
+
+    if "Promoter" in str(row.get("client_category", "")):
+        score += 3
+    if row.get("action") == "Acquisition":
+        score += 4
+    if row.get("quantity", 0) > 100000:
+        score += 2
+    if row.get("value", 0) > 10000000:
+        score += 2
+
+    return score
 @st.cache_data(ttl=3600)
 def load_technical_data():
 
@@ -94,7 +212,7 @@ def get_file_timestamp(file_path):
 
 @st.cache_data(ttl=3600)
 def load_all_data():
-    return load_master_sh(), load_master_fin(), load_master_cf(), load_insider_data(), load_snapshot(),load_brokerage_data(), load_technical_data()
+    return load_master_sh(), load_master_fin(), load_master_cf(), load_insider_trades(), load_snapshot(),load_brokerage_data(), load_technical_data()
 
 @st.cache_data(ttl=3600)
 def load_master_sh() -> pd.DataFrame:
@@ -147,21 +265,21 @@ def load_master_cf() -> pd.DataFrame:
         if frames: return _clean_fin(pd.concat(frames, ignore_index=True))
     return pd.DataFrame()
 
-@st.cache_data(ttl=3600)
-def load_insider_data() -> pd.DataFrame:
-    if not INSIDER_FILE.exists(): return pd.DataFrame()
-    try:
-        df = pd.read_parquet(INSIDER_FILE)
-        if df.empty: return pd.DataFrame()
-        if "stock" in df.columns:
-            df["stock"] = df["stock"].astype(str).str.upper().str.strip()
-        for col in ["value", "quantity"]:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-        return df.reset_index(drop=True)
-    except Exception as e:
-        st.warning(f"Could not load insider data: {e}")
-        return pd.DataFrame()
+# @st.cache_data(ttl=3600)
+# def load_insider_data() -> pd.DataFrame:
+#     if not INSIDER_FILE.exists(): return pd.DataFrame()
+#     try:
+#         df = pd.read_parquet(INSIDER_FILE)
+#         if df.empty: return pd.DataFrame()
+#         if "stock" in df.columns:
+#             df["stock"] = df["stock"].astype(str).str.upper().str.strip()
+#         for col in ["value", "quantity"]:
+#             if col in df.columns:
+#                 df[col] = pd.to_numeric(df[col], errors="coerce")
+#         return df.reset_index(drop=True)
+#     except Exception as e:
+#         st.warning(f"Could not load insider data: {e}")
+#         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def load_snapshot() -> pd.DataFrame:

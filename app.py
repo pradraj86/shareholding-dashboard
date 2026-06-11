@@ -4,7 +4,7 @@ import subprocess
 from utils import *
 
 st.set_page_config(
-    page_title="Stock Tracker",
+    page_title="Tracker",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -116,7 +116,7 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.title("📊 Stock Tracker")
+    st.title("📊 Tracker")
     st.caption("Source: Screener.in")
     st.markdown("---")
     st.caption("📅 Last Data Updates")
@@ -386,7 +386,7 @@ else:
 
 # ─── Market-wide stats ────────────────────────────────────────────────────────
 
-st.title("Stock Tracker")
+st.title("Tracker")
 st.caption(
     f"Data from Screener.in · {len(symbols)} stocks · "
     f"{df_sh['quarter'].nunique() if not df_sh.empty else 0} quarters"

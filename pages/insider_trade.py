@@ -1,12 +1,11 @@
 from datetime import date, timedelta
 from pathlib import Path
 import io
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from insider_fetcher import build_insider_summary, fetch_insider_data, insider_score
+from utils import *
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 INSIDER_FILE  = Path("data/insider_trades.parquet")
@@ -39,10 +38,6 @@ div[data-testid="stMetricValue"] { font-size: 20px; font-weight: 650; }
 </style>
 """, unsafe_allow_html=True)
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-@st.cache_data(ttl=60 * 30, show_spinner=False)
-def load_insider_data(start_date, end_date, hide_small_qty):
-    return fetch_insider_data(start_date, end_date, hide_small_qty)
 
 def format_inr(value):
     if pd.isna(value):
@@ -88,18 +83,30 @@ with st.sidebar:
         end_date   = date.today()
         start_date = end_date - timedelta(days=days_map[preset])
 
-    if st.button("🔄 Refresh data", use_container_width=True):
+    if st.button("🔄 Refresh Insider Data"):
+
+        subprocess.run(
+            ["python", "insider_fetcher.py"]
+        )
+
         st.cache_data.clear()
+
         st.rerun()
 
 # ─── Load data ────────────────────────────────────────────────────────────────
-with st.spinner("Fetching insider disclosures..."):
-    try:
-        df = load_insider_data(start_date, end_date, hide_small_qty)
-    except Exception as exc:
-        st.error(f"Could not fetch insider trading data: {exc}")
-        st.stop()
+df = load_insider_trades()
+if "period" in df.columns:
 
+    df["period"] = pd.to_datetime(
+        df["period"],
+        errors="coerce"
+    )
+
+    df = df[
+        (df["period"].dt.date >= start_date)
+        &
+        (df["period"].dt.date <= end_date)
+    ]
 if df.empty:
     st.info("No insider trading disclosures found for the selected period.")
     st.stop()
@@ -108,9 +115,6 @@ df = df.copy()
 df["insider_score"] = df.apply(insider_score, axis=1)
 summary = build_insider_summary(df)
 
-# Persist to parquet (silent)
-INSIDER_FILE.parent.mkdir(parents=True, exist_ok=True)
-df.to_parquet(INSIDER_FILE, index=False)
 
 # ─── Title ────────────────────────────────────────────────────────────────────
 st.title("🔍 Insider Trading Analysis")
